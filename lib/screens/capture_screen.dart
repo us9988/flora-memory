@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
+import 'package:path_provider/path_provider.dart';
 import '../models/flower_memory.dart';
 import '../providers/memory_provider.dart';
 import '../services/camera_service.dart';
@@ -11,6 +13,7 @@ import '../services/ai_service.dart';
 import '../services/ad_service.dart';
 import '../services/purchase_service.dart';
 import '../services/usage_service.dart';
+import '../services/analytics_service.dart';
 import '../l10n/app_strings.dart';
 
 class CaptureScreen extends ConsumerStatefulWidget {
@@ -36,6 +39,7 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen> {
   @override
   void initState() {
     super.initState();
+    AnalyticsService.logScreenView('capture');
     _location = AppStrings.locationLoading;
     _scanningMessage = AppStrings.scanning;
     _loadRemainingCount();
@@ -120,7 +124,8 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen> {
     if (!await _checkLimit()) return;
     final photo = await _cameraService.takePhoto();
     if (photo != null && mounted) {
-      setState(() => _photo = photo);
+      final compressed = await _compressImage(photo);
+      setState(() => _photo = compressed);
       _fetchLocation();
       _startAnalysis();
     }
@@ -130,9 +135,52 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen> {
     if (!await _checkLimit()) return;
     final photo = await _cameraService.pickFromGallery();
     if (photo != null && mounted) {
-      setState(() => _photo = photo);
+      final compressed = await _compressImage(photo);
+      setState(() => _photo = compressed);
       _fetchLocation();
       _startAnalysis();
+    }
+  }
+
+  /// 이미지 압축: 가로 1080px, JPEG 85% 품질
+  Future<File> _compressImage(File original) async {
+    try {
+      final originalSize = await original.length();
+
+      // 이미 1MB 이하면 압축 불필요
+      if (originalSize < 1024 * 1024) {
+        debugPrint('📷 압축 스킵: ${(originalSize / 1024).toStringAsFixed(0)}KB');
+        return original;
+      }
+
+      final dir = await getApplicationDocumentsDirectory();
+      final targetPath =
+          '${dir.path}/flora_${DateTime.now().millisecondsSinceEpoch}.jpg';
+
+      final result = await FlutterImageCompress.compressAndGetFile(
+        original.absolute.path,
+        targetPath,
+        quality: 85,
+        minWidth: 1080,
+        minHeight: 1080,
+        format: CompressFormat.jpeg,
+      );
+
+      if (result == null) return original;
+
+      final compressedFile = File(result.path);
+      final compressedSize = await compressedFile.length();
+      final saved = originalSize - compressedSize;
+      final ratio = ((saved / originalSize) * 100).toStringAsFixed(0);
+
+      debugPrint(
+        '📷 압축 완료: ${(originalSize / 1024).toStringAsFixed(0)}KB → ${(compressedSize / 1024).toStringAsFixed(0)}KB ($ratio% 감소)',
+      );
+
+      return compressedFile;
+    } catch (e) {
+      debugPrint('⚠️ 이미지 압축 실패: $e');
+      return original;
     }
   }
 

@@ -235,4 +235,32 @@ About this plant, respond in the JSON format below. Output only JSON. All values
 
 Recorded with MyFlora 🌸
 ''';
+
+  // ── 출석 보상 ──
+  static String get attendanceTitle => isKo ? '오늘도 찾아와줬군요!' : 'Welcome back!';
+  static String get attendanceSub =>
+      isKo ? '연속 출석하면 특별한 테마를 드려요' : 'Keep your streak for a special theme';
+  static String get attendanceChecked =>
+      isKo ? '오늘 출석 완료! 🌸' : 'Checked in! 🌸';
+  static String get attendanceAlready =>
+      isKo ? '내일 또 만나요! 🌸' : 'See you tomorrow! 🌸';
+  static String attendanceDaysLeft(int days) => isKo ? 'D-$days' : 'D-$days';
+  static String attendanceStreak(int days) =>
+      isKo ? '${days}일 연속 출석 중!' : '$days day streak!';
+  static String attendanceRewardAt(int days, String themeName) =>
+      isKo ? '$days일 출석 달성 시 해금' : 'Unlock at $days-day streak';
+  static String get attendanceCongrats =>
+      isKo ? '연속 출석 달성!' : 'Streak achieved!';
+  static String get attendanceCongratsMsg => isKo
+      ? '꾸준히 찾아와 주셔서 감사해요.\n특별한 테마를 선물로 드릴게요!'
+      : 'Thanks for visiting!\nHere\'s a special theme for you!';
+  static String get attendanceNewTheme =>
+      isKo ? 'NEW 테마 해금' : 'NEW Theme Unlocked';
+  static String get attendanceApplyTheme => isKo ? '테마 적용하기' : 'Apply Theme';
+  static String attendanceNextReward(String themeName, int days) =>
+      isKo ? '$themeName까지 ${days}일 남았어요' : '$days days left for $themeName';
+  static String get attendanceNextRewardTip =>
+      isKo ? '매일 접속해서 테마를 해금하세요!' : 'Visit daily to unlock!';
+  static String get attendanceAllDone =>
+      isKo ? '모든 출석 보상을 달성했어요! 🏆' : 'All rewards claimed! 🏆';
 }

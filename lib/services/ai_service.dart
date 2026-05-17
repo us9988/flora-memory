@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'package:http/http.dart' as http;
 import '../l10n/app_strings.dart';
 
@@ -23,9 +24,91 @@ class FlowerResult {
     required this.tip,
     required this.season,
   });
+
+  /// 캐시 저장용 Map 변환
+  Map<String, dynamic> toMap() => {
+    'flowerName': flowerName,
+    'scientificName': scientificName,
+    'family': family,
+    'flowerLang': flowerLang,
+    'aiNote': aiNote,
+    'tip': tip,
+    'season': season,
+  };
+
+  /// 캐시에서 복원
+  factory FlowerResult.fromMap(Map<dynamic, dynamic> map) => FlowerResult(
+    flowerName: map['flowerName'] ?? '',
+    scientificName: map['scientificName'] ?? '',
+    family: map['family'] ?? '',
+    flowerLang: map['flowerLang'] ?? '',
+    aiNote: map['aiNote'] ?? '',
+    tip: map['tip'] ?? '',
+    season: map['season'] ?? '봄',
+  );
 }
 
 class AiService {
+  // ── 꽃 캐시 ──
+  static const String _cacheBoxName = 'flower_cache';
+  static Box? _cacheBox;
+
+  static Future<Box> get _cache async {
+    if (_cacheBox == null || !_cacheBox!.isOpen) {
+      _cacheBox = await Hive.openBox(_cacheBoxName);
+    }
+    return _cacheBox!;
+  }
+
+  /// 캐시 키 정규화: 소문자 + 특수문자 제거
+  String _cacheKey(String plantName) {
+    return plantName
+        .toLowerCase()
+        .trim()
+        .replaceAll('×', 'x') // 학명 기호 통일
+        .replaceAll(RegExp(r'\s+'), ' '); // 중복 공백 제거
+  }
+
+  /// 캐시에서 꽃 이야기 조회
+  Future<FlowerResult?> _getFromCache(String plantName) async {
+    try {
+      final box = await _cache;
+      final key = _cacheKey(plantName);
+      final cached = box.get(key);
+      if (cached != null) {
+        debugPrint('🌸 캐시 히트: $plantName');
+        return FlowerResult.fromMap(Map<dynamic, dynamic>.from(cached));
+      }
+      return null;
+    } catch (e) {
+      debugPrint('⚠️ 캐시 조회 실패: $e');
+      return null;
+    }
+  }
+
+  /// 캐시에 꽃 이야기 저장
+  Future<void> _saveToCache(String plantName, FlowerResult result) async {
+    try {
+      final box = await _cache;
+      final key = _cacheKey(plantName);
+      await box.put(key, result.toMap());
+      debugPrint('💾 캐시 저장: $plantName (총 ${box.length}종)');
+    } catch (e) {
+      debugPrint('⚠️ 캐시 저장 실패: $e');
+    }
+  }
+
+  /// 캐시 통계 (디버그용)
+  static Future<Map<String, int>> getCacheStats() async {
+    try {
+      final box = await _cache;
+      return {'cachedSpecies': box.length};
+    } catch (e) {
+      return {'cachedSpecies': 0};
+    }
+  }
+
+  // ── Plant.id: 꽃 식별 ──
   Future<Map<String, String>?> identifyPlant(File photo) async {
     final apiKey = dotenv.env['PLANT_ID_API_KEY'] ?? '';
     if (apiKey.isEmpty) {
@@ -80,7 +163,14 @@ class AiService {
     }
   }
 
+  // ── Claude: 꽃 이야기 (캐시 우선) ──
   Future<FlowerResult?> getFlowerStory(String plantName) async {
+    // 1. 캐시 확인
+    final cached = await _getFromCache(plantName);
+    if (cached != null) return cached;
+
+    // 2. 캐시 미스 → Claude API 호출
+    debugPrint('🌐 캐시 미스: $plantName → Claude API 호출');
     final apiKey = dotenv.env['CLAUDE_API_KEY'] ?? '';
     if (apiKey.isEmpty) {
       debugPrint('⚠️ CLAUDE_API_KEY가 설정되지 않았습니다');
@@ -130,7 +220,7 @@ class AiService {
         }
 
         final flower = jsonDecode(jsonStr);
-        return FlowerResult(
+        final result = FlowerResult(
           flowerName: flower['koreanName'] ?? flower['commonName'] ?? plantName,
           scientificName: flower['scientificName'] ?? '',
           family: flower['family'] ?? '',
@@ -139,6 +229,11 @@ class AiService {
           tip: flower['tip'] ?? '',
           season: _normalizeSeason(flower['season'] ?? ''),
         );
+
+        // 3. 결과를 캐시에 저장
+        await _saveToCache(plantName, result);
+
+        return result;
       }
       return null;
     } catch (e) {

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../services/storage_service.dart';
+import '../services/analytics_service.dart';
 import '../l10n/app_strings.dart';
 
 class OnboardingScreen extends StatefulWidget {
@@ -41,6 +42,12 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   ];
 
   @override
+  void initState() {
+    super.initState();
+    AnalyticsService.logScreenView('onboarding');
+  }
+
+  @override
   void dispose() {
     _pageController.dispose();
     super.dispose();
@@ -58,6 +65,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   }
 
   Future<void> _complete() async {
+    AnalyticsService.logOnboardingComplete();
     await StorageService.setOnboardingDone();
     if (mounted) context.go('/home');
   }

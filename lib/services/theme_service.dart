@@ -86,10 +86,35 @@ class ThemeService {
       accentColor: Color(0xFF4A7FBD),
       bgImage: 'assets/themes/winter.png',
     ),
+    // ── 출석 보상 테마 ──
+    const AppTheme(
+      id: 'sunflower',
+      nameKo: '해바라기',
+      nameEn: 'Sunflower',
+      emoji: '🌻',
+      season: 'attendance',
+      bgColor: Color(0xFFFFFCE8),
+      cardColor: Color(0xFFFFFFF0),
+      accentColor: Color(0xFFE6A817),
+      bgImage: 'assets/themes/sunflower.png',
+    ),
+    const AppTheme(
+      id: 'daisy',
+      nameKo: '데이지',
+      nameEn: 'Daisy',
+      emoji: '🌼',
+      season: 'attendance',
+      bgColor: Color(0xFFF5FAF0),
+      cardColor: Color(0xFFFAFDF7),
+      accentColor: Color(0xFF5E9B3A),
+      bgImage: 'assets/themes/daisy.png',
+    ),
   ];
 
   static Future<Box> get _themeBox async {
-    _box ??= await Hive.openBox(_boxName);
+    if (_box == null || !_box!.isOpen) {
+      _box = await Hive.openBox(_boxName);
+    }
     return _box!;
   }
 
@@ -152,16 +177,17 @@ class ThemeService {
     return 100; // 100 이상은 상한 없이 표시
   }
 
-  /// 테마 해금 여부
+  /// 테마 해금 여부 (계절 테마)
   static bool isThemeUnlocked(String themeId, Map<String, int> seasonCounts) {
     if (themeId == 'default') return true;
-    // TODO: 테스트 후 10으로 되돌리기
+    // 출석 보상 테마는 AttendanceService에서 별도 확인
+    if (themeId == 'sunflower' || themeId == 'daisy') return false;
     final theme = themes.firstWhere(
       (t) => t.id == themeId,
       orElse: () => themes.first,
     );
     final count = seasonCounts[theme.season] ?? 0;
-    return count >= 10; // 테마 테스트: count >= 0
+    return count >= 10;
   }
 
   /// 전체 통계

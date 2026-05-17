@@ -18,7 +18,9 @@ class PurchaseService {
   static bool get isAdRemoved => _isAdRemoved;
 
   static Future<Box> get _purchaseBox async {
-    _box ??= await Hive.openBox(_boxName);
+    if (_box == null || !_box!.isOpen) {
+      _box = await Hive.openBox(_boxName);
+    }
     return _box!;
   }
 

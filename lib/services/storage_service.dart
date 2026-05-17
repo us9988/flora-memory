@@ -11,12 +11,16 @@ class StorageService {
   static Box? _settingsBoxCache;
 
   static Future<Box> get _memories async {
-    _memoriesBox ??= await Hive.openBox(_boxName);
+    if (_memoriesBox == null || !_memoriesBox!.isOpen) {
+      _memoriesBox = await Hive.openBox(_boxName);
+    }
     return _memoriesBox!;
   }
 
   static Future<Box> get _settings async {
-    _settingsBoxCache ??= await Hive.openBox(_settingsBox);
+    if (_settingsBoxCache == null || !_settingsBoxCache!.isOpen) {
+      _settingsBoxCache = await Hive.openBox(_settingsBox);
+    }
     return _settingsBoxCache!;
   }
 

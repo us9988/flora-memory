@@ -5,14 +5,25 @@ import 'package:go_router/go_router.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../providers/memory_provider.dart';
+import '../services/analytics_service.dart';
 import '../l10n/app_strings.dart';
 
-class DetailScreen extends ConsumerWidget {
+class DetailScreen extends ConsumerStatefulWidget {
   final String memoryId;
   const DetailScreen({super.key, required this.memoryId});
+  @override
+  ConsumerState<DetailScreen> createState() => _DetailScreenState();
+}
+
+class _DetailScreenState extends ConsumerState<DetailScreen> {
+  @override
+  void initState() {
+    super.initState();
+    AnalyticsService.logScreenView('detail');
+  }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final memories = ref.watch(memoryProvider);
     if (memories.isEmpty) {
       return Scaffold(
@@ -39,7 +50,7 @@ class DetailScreen extends ConsumerWidget {
     }
 
     final memory = memories.firstWhere(
-      (m) => m.id == memoryId,
+      (m) => m.id == widget.memoryId,
       orElse: () => memories.first,
     );
 

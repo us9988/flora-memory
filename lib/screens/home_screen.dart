@@ -9,6 +9,8 @@ import '../providers/memory_provider.dart';
 import '../services/ad_service.dart';
 import '../services/purchase_service.dart';
 import '../services/theme_service.dart';
+import '../services/attendance_service.dart';
+import '../services/analytics_service.dart';
 import '../l10n/app_strings.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -24,6 +26,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    AnalyticsService.logScreenView('home');
     if (!PurchaseService.isAdRemoved) {
       try {
         _bannerAd = AdService.createBannerAd()
@@ -34,6 +37,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         debugPrint('⚠️ 배너 광고 로드 실패: $e');
       }
     }
+    // 출석 체크 모달
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _showAttendanceModal();
+    });
   }
 
   @override
@@ -269,6 +276,171 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ),
             ),
         ],
+      ),
+    );
+  }
+
+  // ── 출석 체크 모달 ──
+  Future<void> _showAttendanceModal() async {
+    if (!mounted) return;
+    final alreadyChecked = await AttendanceService.isTodayChecked();
+    if (alreadyChecked) return; // 이미 출석했으면 모달 안 띄움
+
+    final streak = await AttendanceService.getCurrentStreak();
+    final nextReward = await AttendanceService.getNextReward();
+
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => _AttendanceModal(
+        currentStreak: streak,
+        nextReward: nextReward,
+        onCheckIn: () async {
+          await AttendanceService.checkIn();
+          final currentStreak = await AttendanceService.getCurrentStreak();
+          AnalyticsService.logAttendanceCheckIn(streak: currentStreak);
+          Navigator.pop(ctx);
+          // 보상 달성 체크
+          final newReward = await AttendanceService.checkNewReward();
+          if (newReward != null && mounted) {
+            AnalyticsService.logAttendanceReward(
+              themeId: newReward,
+              days: newReward == 'sunflower' ? 14 : 28,
+            );
+            _showRewardModal(newReward);
+          }
+        },
+      ),
+    );
+  }
+
+  void _showRewardModal(String themeId) {
+    final themeData = ThemeService.themes.firstWhere(
+      (t) => t.id == themeId,
+      orElse: () => ThemeService.themes.first,
+    );
+    final targetDays = themeId == 'sunflower' ? 14 : 28;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        child: Container(
+          padding: const EdgeInsets.all(28),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFFBF5),
+            borderRadius: BorderRadius.circular(28),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('🎉', style: TextStyle(fontSize: 56)),
+              const SizedBox(height: 12),
+              Text(
+                '$targetDays${AppStrings.attendanceCongrats}',
+                style: const TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF2D2520),
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                AppStrings.attendanceCongratsMsg,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: Color(0xFFB5A89E),
+                  height: 1.6,
+                ),
+              ),
+              const SizedBox(height: 20),
+              // 테마 카드
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFFFFF0F3), Color(0xFFFFE0E8)],
+                  ),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: const Color(0xFFFFB8C9),
+                    width: 1.5,
+                  ),
+                ),
+                child: Column(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE8877C),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        AppStrings.attendanceNewTheme,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      '${themeData.emoji} ${AppStrings.isKo ? themeData.nameKo : themeData.nameEn}',
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF2D2520),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '✨ ${themeData.emoji} ✨',
+                      style: const TextStyle(fontSize: 28),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () async {
+                    await ThemeService.setTheme(themeId);
+                    AnalyticsService.logThemeChanged(themeId: themeId);
+                    if (mounted) {
+                      Navigator.pop(ctx);
+                      setState(() {});
+                    }
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF2D2520),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    elevation: 0,
+                  ),
+                  child: Text(
+                    '${AppStrings.attendanceApplyTheme} ${themeData.emoji}',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -674,6 +846,352 @@ class _EmptyState extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ── 출석 체크 모달 위젯 ──
+class _AttendanceModal extends StatelessWidget {
+  final int currentStreak;
+  final Map<String, dynamic> nextReward;
+  final VoidCallback onCheckIn;
+
+  const _AttendanceModal({
+    required this.currentStreak,
+    required this.nextReward,
+    required this.onCheckIn,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final targetDays = nextReward['targetDays'] as int;
+    final remaining = nextReward['remaining'] as int;
+    final emoji = nextReward['emoji'] as String;
+    final themeName = AppStrings.isKo
+        ? nextReward['themeNameKo'] as String
+        : nextReward['themeNameEn'] as String;
+    final allDone = targetDays == 0;
+
+    // 현재 타겟 기준 진행도
+    final progressDays = allDone ? 0 : targetDays - remaining;
+    final progressRatio = allDone
+        ? 1.0
+        : (progressDays / targetDays).clamp(0.0, 1.0);
+    final streakInCycle = progressDays;
+
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFFBF5),
+          borderRadius: BorderRadius.circular(28),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('🌼', style: TextStyle(fontSize: 48)),
+            const SizedBox(height: 8),
+            Text(
+              AppStrings.attendanceTitle,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.w800,
+                color: Color(0xFF2D2520),
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              AppStrings.attendanceSub,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 13, color: Color(0xFFB5A89E)),
+            ),
+            const SizedBox(height: 22),
+
+            // 7일 원형 진행도 (스크롤 가능)
+            SizedBox(
+              height: 70,
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: List.generate(7, (i) {
+                    final dayNum = i + 1;
+                    final isChecked =
+                        i <
+                        (streakInCycle % 7 == 0 && streakInCycle > 0
+                            ? 7
+                            : streakInCycle % 7);
+                    final isToday =
+                        i ==
+                        (streakInCycle % 7 == 0 && streakInCycle > 0
+                            ? 6
+                            : (streakInCycle % 7));
+                    final isRewardDay = i == 6;
+
+                    final widget = isRewardDay
+                        ? Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(
+                                width: 38,
+                                height: 38,
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(12),
+                                  gradient: isChecked
+                                      ? const LinearGradient(
+                                          colors: [
+                                            Color(0xFFFFD700),
+                                            Color(0xFFFFA500),
+                                          ],
+                                        )
+                                      : const LinearGradient(
+                                          colors: [
+                                            Color(0xFFEBE3D8),
+                                            Color(0xFFD4CCC2),
+                                          ],
+                                        ),
+                                ),
+                                child: const Center(
+                                  child: Text(
+                                    '🎁',
+                                    style: TextStyle(fontSize: 18),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                AppStrings.isKo ? '보상' : 'Gift',
+                                style: const TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFFB5A89E),
+                                ),
+                              ),
+                            ],
+                          )
+                        : Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(
+                                width: 34,
+                                height: 34,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: isChecked
+                                      ? const Color(0xFF2D2520)
+                                      : isToday
+                                      ? const Color(0xFFFFF0EE)
+                                      : const Color(0xFFFFFBF5),
+                                  border: Border.all(
+                                    color: isChecked
+                                        ? const Color(0xFF2D2520)
+                                        : isToday
+                                        ? const Color(0xFFE8877C)
+                                        : const Color(0xFFEBE3D8),
+                                    width: 2.5,
+                                  ),
+                                ),
+                                child: Center(
+                                  child: isChecked
+                                      ? const Text(
+                                          '✓',
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        )
+                                      : Text(
+                                          '$dayNum',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w700,
+                                            color: isToday
+                                                ? const Color(0xFFE8877C)
+                                                : const Color(0xFFB5A89E),
+                                          ),
+                                        ),
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                isToday
+                                    ? (AppStrings.isKo ? '오늘' : 'Today')
+                                    : '${dayNum}${AppStrings.isKo ? '일' : ''}',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: isToday
+                                      ? FontWeight.w700
+                                      : FontWeight.w600,
+                                  color: isToday
+                                      ? const Color(0xFFE8877C)
+                                      : const Color(0xFFB5A89E),
+                                ),
+                              ),
+                            ],
+                          );
+
+                    return Padding(
+                      padding: EdgeInsets.only(right: i < 6 ? 14 : 0),
+                      child: widget,
+                    );
+                  }),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // 진행 바
+            Column(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: progressRatio,
+                    backgroundColor: const Color(0xFFEBE3D8),
+                    valueColor: const AlwaysStoppedAnimation<Color>(
+                      Color(0xFF2D2520),
+                    ),
+                    minHeight: 8,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: Text(
+                    allDone
+                        ? '완료!'
+                        : '$progressDays / $targetDays${AppStrings.isKo ? '일' : ' days'}',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFFB5A89E),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+
+            // 보상 미리보기
+            if (!allDone)
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 12,
+                ),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFFFFF5F8), Color(0xFFFFE8EE)],
+                  ),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: const Color(0xFFFFD4DE),
+                    width: 1.5,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Text(emoji, style: const TextStyle(fontSize: 32)),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            themeName,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF2D2520),
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            AppStrings.attendanceRewardAt(
+                              targetDays,
+                              themeName,
+                            ),
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: Color(0xFFB5A89E),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFF0EE),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        AppStrings.attendanceDaysLeft(remaining),
+                        style: const TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFFE8877C),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE8F5E9),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Row(
+                  children: [
+                    const Text('🏆', style: TextStyle(fontSize: 28)),
+                    const SizedBox(width: 12),
+                    Text(
+                      AppStrings.attendanceAllDone,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF4CAF50),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            const SizedBox(height: 18),
+
+            // 출석 버튼
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: onCheckIn,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF2D2520),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  elevation: 0,
+                ),
+                child: Text(
+                  AppStrings.attendanceChecked,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

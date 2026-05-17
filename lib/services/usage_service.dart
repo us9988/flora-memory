@@ -8,7 +8,9 @@ class UsageService {
   static Box? _box;
 
   static Future<Box> get _usageBox async {
-    _box ??= await Hive.openBox(_boxName);
+    if (_box == null || !_box!.isOpen) {
+      _box = await Hive.openBox(_boxName);
+    }
     return _box!;
   }
 
