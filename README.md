@@ -4,8 +4,6 @@
 
 산책에서 만난 꽃을 사진 한 장으로 기록하세요. AI가 꽃 이름, 꽃말, 역사를 알려줍니다.
 
-Snap a photo of any flower — AI identifies it and tells you its name, meaning, and story.
-
 ---
 
 ## Screenshots
